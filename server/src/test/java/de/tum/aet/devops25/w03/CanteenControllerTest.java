@@ -49,35 +49,66 @@ public class CanteenControllerTest {
 
     @BeforeEach
     public void setup() {
-        // Mock the clock to avoid flaky tests based on timing issues (because the service uses 'today')
+        // Mock the clock to avoid flaky tests based on timing issues (because the
+        // service uses 'today')
         when(clock.instant()).thenReturn(Instant.parse("2025-05-08T12:00:00Z"));
         when(clock.getZone()).thenReturn(ZoneOffset.UTC);
     }
 
     @Test
     public void testGetTodayMeals_ReturnsNoContent_WhenNoMealsAvailable() throws Exception {
-         // TODO implement this test
+        when(restTemplate.getForObject(anyString(), eq(Week.class))).thenReturn(new Week(15, 2025, List.of()));
+
+        getList("/{canteenName}/today", HttpStatus.NO_CONTENT, Dish.class, "mensa-garching");
     }
 
     @Test
     public void testGetTodayMeals_ReturnsOkWithMeals() throws Exception {
-         // TODO implement this second test
+        // Arrange
+        int year = 2025;
+        // Note: use the same as the mocked clock above
+        LocalDate today = LocalDate.of(year, 5, 8);
+        int weekNumber = today.get(WeekFields.of(Locale.getDefault()).weekOfWeekBasedYear());
+        String weekStr = String.format("%02d", weekNumber);
+
+        // Create test data
+        final var expectedWeek = createTestData(today, weekNumber, year);
+
+        // Mock the API response
+        String canteenName = "mensa-garching";
+        String expectedUrl = "https://tum-dev.github.io/eat-api/" + canteenName + "/" + year + "/" + weekStr + ".json";
+        when(restTemplate.getForObject(eq(expectedUrl), eq(Week.class))).thenReturn(expectedWeek);
+
+        // Act
+        List<Dish> actualTodayDishes = getList("/{canteenName}/today", HttpStatus.OK, Dish.class, canteenName);
+
+        // Assert
+        assertThat(actualTodayDishes).hasSize(2);
+        var actualDish1 = actualTodayDishes.getFirst();
+        assertThat(actualDish1.name()).isEqualTo("Vegetarian Pasta");
+        assertThat(actualDish1.dish_type()).isEqualTo("Main Dish");
+        var actualDish2 = actualTodayDishes.get(1);
+        assertThat(actualDish2.name()).isEqualTo("Salad");
+        assertThat(actualDish2.dish_type()).isEqualTo("Side Dish");
     }
 
-    private <T> List<T> getList(String path, HttpStatus expectedStatus, Class<T> listElementType, Object... uriVariables) throws Exception {
+    private <T> List<T> getList(String path, HttpStatus expectedStatus, Class<T> listElementType,
+            Object... uriVariables) throws Exception {
         MvcResult res = mockMvc.perform(get(path, uriVariables)
-                        .contentType(MediaType.APPLICATION_JSON))
+                .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().is(expectedStatus.value()))
                 .andReturn();
 
         if (expectedStatus.value() != 200) {
-            if (res.getResponse().getContentType() != null && !res.getResponse().getContentType().equals("application/problem+json")) {
+            if (res.getResponse().getContentType() != null
+                    && !res.getResponse().getContentType().equals("application/problem+json")) {
                 assertThat(res.getResponse().getContentAsString()).isNullOrEmpty();
             }
             return null;
         }
         var mapper = new ObjectMapper();
-        return mapper.readValue(res.getResponse().getContentAsString(), mapper.getTypeFactory().constructCollectionType(List.class, listElementType));
+        return mapper.readValue(res.getResponse().getContentAsString(),
+                mapper.getTypeFactory().constructCollectionType(List.class, listElementType));
     }
 
     private static Week createTestData(LocalDate date, int weekNumber, int year) {
